@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <string.h>
 #include <dirent.h>
+#include <inttypes.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -782,6 +783,10 @@ static const char *name2mime(const char *name) {
         goto def;
     end++;
 
+    // Everything under Downloads/ should be treated as binary
+    if (strcasestr(name, "Downloads/"))
+        goto def;
+
     #define CMP(s) if (!strncmp(end, s, sizeof(s) - 1))
 
     CMP("htm")
@@ -917,6 +922,12 @@ static void servefile(ws_ctx_t *ws_ctx, const char *in, const char * const user,
 
     percent_decode(path, buf, 1);
 
+    // in case they percent-encoded dots
+    if (strstr(buf, "../")) {
+        handler_msg("Attempted dir traversal attack, rejecting\n", len);
+        goto nope;
+    }
+
     handler_msg("Requested file '%s'\n", buf);
     sprintf(fullpath, "%s/%s", settings.httpdir, buf);
 
@@ -933,15 +944,15 @@ static void servefile(ws_ctx_t *ws_ctx, const char *in, const char * const user,
         goto nope;
     }
 
-    fseek(f, 0, SEEK_END);
-    const uint64_t filesize = ftell(f);
+    fseeko(f, 0, SEEK_END);
+    const uint64_t filesize = ftello(f);
     rewind(f);
 
     sprintf(buf, "HTTP/1.1 200 OK\r\n"
                  "Server: KasmVNC/4.0\r\n"
                  "Connection: close\r\n"
                  "Content-type: %s\r\n"
-                 "Content-length: %lu\r\n"
+                 "Content-length: %" PRIu64 "\r\n"
                  "%s"
                  "\r\n",
                  name2mime(path), filesize, extra_headers ? extra_headers : "");
@@ -1016,6 +1027,20 @@ static void send403(ws_ctx_t *ws_ctx, const char * const origip, const char * co
                  "403 Forbidden", extra_headers ? extra_headers : "");
     ws_send(ws_ctx, buf, strlen(buf));
     weblog(403, wsthread_handler_id, 0, origip, ip, "-", 1, "-", strlen(buf));
+}
+
+static void send400(ws_ctx_t *ws_ctx, const char * const origip, const char * const ip,
+                    const char *info) {
+    char buf[4096];
+    sprintf(buf, "HTTP/1.1 400 Bad Request\r\n"
+                 "Server: KasmVNC/4.0\r\n"
+                 "Connection: close\r\n"
+                 "Content-type: text/plain\r\n"
+                 "%s"
+                 "\r\n"
+                 "400 Bad Request%s", extra_headers ? extra_headers : "", info);
+    ws_send(ws_ctx, buf, strlen(buf));
+    weblog(400, wsthread_handler_id, 0, origip, ip, "-", 1, "-", strlen(buf));
 }
 
 static uint8_t ownerapi_post(ws_ctx_t *ws_ctx, const char *in, const char * const user,
@@ -1644,7 +1669,7 @@ timeout:
 }
 
 ws_ctx_t *do_handshake(int sock, char * const ip) {
-    char handshake[4096], response[4096], sha1[29], trailer[17];
+    char handshake[16 * 1024], response[4096], sha1[29], trailer[17];
     char *scheme, *pre;
     headers_t *headers;
     int len, i, offset;
@@ -1701,6 +1726,7 @@ ws_ctx_t *do_handshake(int sock, char * const ip) {
             break;
         } else if (sizeof(handshake) <= (size_t)(offset + 1)) {
             handler_emsg("Oversized handshake\n");
+            send400(ws_ctx, "-", ip, ", too large");
             free_ws_ctx(ws_ctx);
             return NULL;
         } else if (9 == i) {

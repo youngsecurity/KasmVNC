@@ -27,7 +27,7 @@ wget <package_url>
 sudo apt-get install ./kasmvncserver_*.deb
 
 # Add your user to the ssl-cert group
-sudo addgroup $USER ssl-cert
+sudo adduser $USER ssl-cert
 ```
 
 ### Oracle 8
@@ -269,4 +269,4 @@ Future Goals:
 See the [builder/README.md](https://github.com/kasmtech/KasmVNC/blob/master/builder/README.md). We containerize our build systems to ensure highly repeatable builds.
 
 ### License and Acknowledgements
-See the [LICENSE.TXT](https://github.com/kasmtech/KasmVNC/blob/master/LICENSE.TXT) and [ACKNOWLEDGEMENTS.MD](https://github.com/kasmtech/KasmVNC/blob/master/LICENSE.TXT)
+See the [LICENSE.TXT](https://github.com/kasmtech/KasmVNC/blob/master/LICENSE.TXT) and [ACKNOWLEDGEMENTS.md](https://github.com/kasmtech/KasmVNC/blob/master/ACKNOWLEDGEMENTS.md)
